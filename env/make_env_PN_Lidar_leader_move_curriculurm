@@ -164,7 +164,7 @@ class AirSimMultiDroneEnv:
         self.hit_radius_start = 15.0
         self.hit_radius = 15.0
         self.min_hit_radius = 1.5
-        self.hit_radius_decay = 0.5
+        self.hit_radius_decay = 0.1
         self.successes_per_level = 5
         self.total_successes = 0
 
