@@ -1,0 +1,163 @@
+{
+  "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/main/docs/settings_json.md",
+  "SettingsVersion": 1.2,
+  "SimMode": "Multirotor",
+  "RpcEnabled": true,
+  "ViewMode": "Manual",
+  "ClockSpeed": 15.0,
+  "Recording": false,
+"CameraDirector": {
+    "FollowDistance": -3,
+    "X": 0.0,
+    "Y": 0.0,
+    "Z": -90.0,
+    "Pitch": -90.0,
+    "Roll": 0.0,
+    "Yaw": 0.0
+  },
+  "SubWindows": [
+    {
+      "WindowID": 0,
+      "ImageType": 0,
+      "CameraName": "front_center",
+      "Visible": false
+    },
+    {
+      "WindowID": 1,
+      "ImageType": 0,
+      "CameraName": "bottom_center",
+      "Visible": false
+    },
+    {
+      "WindowID": 2,
+      "ImageType": 0,
+      "CameraName": "back_center",
+      "Visible": false
+    }
+  ],
+  "Vehicles": {
+    "DynamicObstacle0": {
+      "VehicleType": "SimpleFlight",
+      "PawnPath": "DynamicObstacle",
+      "X": 15,
+      "Y": 17.5,
+      "Z": 0,
+      "AutoCreate": true,
+      "DisablePhysics": true
+    },
+    "DynamicObstacle1": {
+      "VehicleType": "SimpleFlight",
+      "PawnPath": "DynamicObstacle",
+      "X": 15,
+      "Y": -17.5,
+      "Z": 0,
+      "AutoCreate": true,
+      "DisablePhysics": true
+    },
+    "Drone1": {
+      "VehicleType": "SimpleFlight",
+      "PawnPath": "MyCustomDroneBP",
+      "X": 0,
+      "Y": 0,
+      "Z": 0
+    },
+    "Follower0": {
+    "VehicleType": "SimpleFlight",
+    "PawnPath": "DefaultQuadrotor",
+    "X": 15.0,
+    "Y": 0.0,
+    "Z": 0,
+    "Sensors": {
+      "Follower0_LidarSensor": {
+        "SensorType": 6,
+        "Enabled": true,
+        "NumberOfChannels": 16,
+        "Range": 50.0,
+        "RotationsPerSecond": 10,
+        "PointsPerSecond": 80000,
+        "X": 0,
+        "Y": 0,
+        "Z": 0.3,
+        "Roll": 0,
+        "Pitch": 0,
+        "Yaw": 0,
+        "VerticalFOVUpper": 20,
+        "VerticalFOVLower": -20,
+        "HorizontalFOVStart": -180,
+        "HorizontalFOVEnd": 180,
+        "DrawDebugPoints": false,
+        "DataFrame": "SensorLocalFrame"
+      }
+    }
+  },
+  "Follower1": {
+    "VehicleType": "SimpleFlight",
+    "PawnPath": "DefaultQuadrotor",
+    "X": -7.5,
+    "Y": 12.99,
+    "Z": 0,
+    "Sensors": {
+      "Follower1_LidarSensor": {
+        "SensorType": 6,
+        "Enabled": true,
+        "NumberOfChannels": 16,
+        "Range": 50.0,
+        "RotationsPerSecond": 10,
+        "PointsPerSecond": 80000,
+        "X": 0,
+        "Y": 0,
+        "Z": 0.3,
+        "Roll": 0,
+        "Pitch": 0,
+        "Yaw": 0,
+        "VerticalFOVUpper": 20,
+        "VerticalFOVLower": -20,
+        "HorizontalFOVStart": -180,
+        "HorizontalFOVEnd": 180,
+        "DrawDebugPoints": false,
+        "DataFrame": "SensorLocalFrame"
+      }
+    }
+  },
+  "Follower2": {
+    "VehicleType": "SimpleFlight",
+    "PawnPath": "DefaultQuadrotor",
+    "X": -7.5,
+    "Y": -12.99,
+    "Z": 0,
+    "Sensors": {
+      "Follower2_LidarSensor": {
+        "SensorType": 6,
+        "Enabled": true,
+        "NumberOfChannels": 16,
+        "Range": 50.0,
+        "RotationsPerSecond": 10,
+        "PointsPerSecond": 80000,
+        "X": 0,
+        "Y": 0,
+        "Z": 0.3,
+        "Roll": 0,
+        "Pitch": 0,
+        "Yaw": 0,
+        "VerticalFOVUpper": 20,
+        "VerticalFOVLower": -20,
+        "HorizontalFOVStart": -180,
+        "HorizontalFOVEnd": 180,
+        "DrawDebugPoints": false,
+        "DataFrame": "SensorLocalFrame"
+      }
+    }
+  }
+  },
+  "PawnPaths": {
+    "MyCustomDroneBP": {
+      "PawnBP": "Class'/Game/MyDrones/BP_FlyingPawn_NoCollision.BP_FlyingPawn_NoCollision_C'"
+    },
+    "DefaultQuadrotor": {
+      "PawnBP": "Class'/AirSim/Blueprints/BP_FlyingPawn.BP_FlyingPawn_C'"
+    },
+    "DynamicObstacle": {
+      "PawnBP": "Class'/AirSim/Blueprints/BP_DynamicObstacle.BP_DynamicObstacle_C'"
+    }
+  }
+}
