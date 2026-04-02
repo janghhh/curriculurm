@@ -1,0 +1,208 @@
+# ---- UTF-8 safe console (Windows cp949 crash fix) ----
+import os, sys
+os.environ["PYTHONIOENCODING"] = "utf-8"
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+import os
+import torch
+import numpy as np
+import gym
+from gym import spaces
+from types import SimpleNamespace
+from collections import deque 
+import wandb
+import json
+
+# === 프로젝트 모듈 ===
+from onpolicy.envs.eval_env import AirSimMultiDroneEnv
+# from onpolicy.envs. import AirSimMultiDroneEnv 
+from onpolicy.algorithms.r_mappo.algorithm.r_actor_critic import R_Actor
+
+# ---------- [설정] 경로 및 디바이스 ----------
+actor_model_path = r"C:\Users\RL_RNV_PC_3\Documents\Gardian\UAV_Airsim_RL_Project\UAV_Airsim_RL_Project\on-policy\하이브리드\wandb\run-20260330_112757-0uaju52m\files\actor.pt"
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+# ---------- [설정] 하이퍼파라미터 ----------
+args = SimpleNamespace(
+    hidden_size=64, gain=0.01, use_orthogonal=True, use_policy_active_masks=False,
+    use_naive_recurrent_policy=False, use_recurrent_policy=True, recurrent_N=1,
+    algorithm_name="rmappo", use_popart=False, use_feature_normalization=True,
+    use_cnn_feature=False, stacked_frames=1, activation_id=1, use_ReLU=True, layer_N=1,
+)
+
+def _get_first_space(env, attr):
+    if hasattr(env, attr):
+        sp = getattr(env, attr)
+        if isinstance(sp, (list, tuple)): return sp[0]
+        return sp
+    return None
+
+def main():
+    # 1. WandB 초기화
+    wandb.init(
+        project="UAV_Comparison", 
+        name="Proposed_Method_Eval_100EP",
+        config=vars(args),
+        job_type="evaluation",
+        reinit=True
+    )
+
+    # 2. Env 생성
+    print("Initialize Environment...")
+    env = AirSimMultiDroneEnv(ip_address="127.0.0.1",
+                              follower_names=("Follower0","Follower1", "Follower2"),
+                              do_visualize=False)
+
+    obs_list = env.reset()
+    
+    # 3. 모델 로드
+    obs_space = _get_first_space(env, "observation_space")
+    act_space = _get_first_space(env, "action_space")
+
+    if obs_space is None:
+        obs_dim = int(np.asarray(obs_list[0]).size)
+        obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+    if act_space is None:
+        act_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+
+    actor = R_Actor(args, obs_space, act_space, device=device)
+    
+    if os.path.exists(actor_model_path):
+        state = torch.load(actor_model_path, map_location=device)
+        state_dict = state.get("model", state) if isinstance(state, dict) else state
+        actor.load_state_dict(state_dict, strict=True)
+        actor.eval()
+        print("✅ Model Loaded Successfully!")
+        
+    else:
+        print(f"❌ Error: Model file not found at {actor_model_path}")
+        return
+
+    # 4. 평가 루프 실행 (100 에피소드)
+    evaluate_policy(env, actor, num_episodes=100)
+    
+    wandb.finish()
+
+def evaluate_policy(env, actor, num_episodes=100, deterministic=False):
+    # --- [데이터 수집용 리스트] ---
+    results = {
+        "success": [],              # DSR용
+        "ally_collision": [],       # CR용
+        "intercept_range": [],      # IR용 (성공한 에피소드만 기록)
+        "primary_miss": [],         # 1차 요격 실패 발생 여부
+        "secondary_success": [],     # 1차 요격 실패 후 요격 성공 여부 (SIR용)
+        "intercept_positions": []   # [추가] 성공한 에피소드의 좌표 저장용
+    }
+
+
+    print(f"🚀 Start Evaluation for {num_episodes} episodes...")
+
+    for ep in range(num_episodes):
+        obs_list = env.reset()
+        done_list = [False] * len(obs_list)
+        
+        rnn_states = torch.zeros((len(obs_list), args.recurrent_N, args.hidden_size), dtype=torch.float32, device=device)
+        masks = torch.ones((len(obs_list), 1), dtype=torch.float32, device=device)
+
+        episode_done = False
+        while not episode_done:
+            obs_tensor = torch.tensor(np.array(obs_list), dtype=torch.float32, device=device)
+            
+            with torch.no_grad():
+                act_t, _, rs_out = actor(obs_tensor, rnn_states, masks, available_actions=None, deterministic=deterministic)
+            
+            actions = act_t.cpu().numpy()
+            rnn_states = rs_out
+
+            next_obs_list, rewards, done_list, info_list = env.step(actions)
+            masks = torch.tensor(1 - np.array(done_list)[:, None], dtype=torch.float32, device=device)
+            obs_list = next_obs_list
+
+            if np.any(done_list):
+                episode_done = True
+                
+                # --- [정보 추출] ---
+                # 모든 에이전트의 info는 공유되므로 첫 번째만 사용
+                first_info = list(info_list[0].values())[0]
+
+                is_win = first_info.get("episode_success", 0)
+                is_coll = first_info.get("episode_ally_collision", 0)
+                ir = first_info.get("episode_intercept_range", 0.0)
+                miss_occurred = first_info.get("primary_miss_occurred", False)
+
+                # 리스트에 저장
+                results["success"].append(is_win)
+                results["ally_collision"].append(is_coll)
+
+                # 요격 성공 시에만 IR 기록
+                if is_win == 1.0:
+                    results["intercept_range"].append(ir)
+                    results["intercept_positions"].append(first_info.get("final_positions", {}))
+                
+                results["primary_miss"].append(miss_occurred)
+                
+                # 1차 요격 실패가 있었는데 최종적으로 성공했다면 -> 차순위 요격 성공!
+                is_secondary_success = (miss_occurred and is_win == 1.0)
+                results["secondary_success"].append(is_secondary_success)
+                
+                # WandB Step Log
+                wandb.log({
+                    "Ep": ep,
+                    "Success": is_win,
+                    "Ally_Collision": is_coll,
+                    "Intercept_Range": ir if is_win else 0,
+                    "Primary_Miss": int(miss_occurred)
+                })
+
+                print(f"[Ep {ep+1:03d}/{num_episodes}] Win: {is_win} | Coll: {is_coll} | "
+                      f"IR: {ir:.2f}m | Missed Once?: {miss_occurred}")
+                
+    # --- [최종 결과 집계 및 출력] ---
+    print("\n" + "="*60)
+    print(f"📊 Final Evaluation Report (Total {num_episodes} Episodes)")
+    print("="*60)
+    
+# 1. DSR (방어 성공률)
+    avg_dsr = np.mean(results["success"]) * 100
+    
+    # 2. CR (아군 충돌률)
+    avg_cr = np.mean(results["ally_collision"]) * 100
+    
+    # 3. IR (요격 거리) - 성공한 케이스만 평균 계산
+    avg_ir = np.mean(results["intercept_range"]) if len(results["intercept_range"]) > 0 else 0.0
+    std_ir = np.std(results["intercept_range"]) if len(results["intercept_range"]) > 0 else 0.0
+
+    # 4. SIR (차순위 요격 성공률)
+    total_misses = sum(results["primary_miss"])
+    total_sec_success = sum(results["secondary_success"])
+    avg_sir = (total_sec_success / total_misses * 100) if total_misses > 0 else 0.0
+
+    print(f"● 방어 성공률 (DSR)     : {avg_dsr:.2f}% ({sum(results['success'])}/{num_episodes})")
+    print(f"● 아군 충돌률 (CR)      : {avg_cr:.2f}% ({sum(results['ally_collision'])}/{num_episodes})")
+    print(f"● 요격 거리 (IR)        : {avg_ir:.2f} m (±{std_ir:.2f}) *성공 에피소드 기준")
+    
+    if total_misses > 0:
+        print(f"● 차순위 요격 성공률(SIR): {avg_sir:.2f}% ({total_sec_success}회 성공 / {total_misses}회 1차 실패 발생)")
+    else:
+        print(f"● 차순위 요격 성공률(SIR): N/A (1차 요격 실패가 단 한 번도 발생하지 않음)")
+    print("="*60)
+
+    # WandB Summary 기록
+    wandb.run.summary["DSR"] = avg_dsr
+    wandb.run.summary["CR"] = avg_cr
+    wandb.run.summary["IR_mean"] = avg_ir
+    wandb.run.summary["SIR"] = avg_sir
+
+    # [추가] 시각화용 데이터를 JSON 파일로 저장
+    with open("intercept_geometry.json", "w", encoding="utf-8") as f:
+        json.dump(results["intercept_positions"], f, indent=4)
+    print("💾 요격 순간의 좌표 데이터가 'intercept_geometry.json'에 저장되었습니다.")
+
+    print("Evaluation Finished.")
+
+if __name__ == "__main__":
+    main()
